@@ -1,0 +1,69 @@
+﻿{
+  "bizType": [
+    "Manufacturing",
+    "Wholesale / Distribution",
+    "Manufacturing / Industrial",
+    "Consultancy / Services",
+    "E-commerce",
+    "Healthcare / Medical",
+    "Retail",
+    "IT / Tech",
+    "Other"
+  ],
+  "yrs": [
+    "More than 5 years",
+    "3-5 years",
+    "1-3 years",
+    "Less than 1 year"
+  ],
+  "sku": [
+    "50-200 SKUs",
+    "More than 500 SKUs",
+    "200-500 SKUs",
+    "Fewer than 50 SKUs"
+  ],
+  "invMgmt": [
+    "Manual tracking (spreadsheets or paper records)",
+    "Enterprise Resource Planning (ERP) system",
+    "Dedicated inventory management software",
+    "Automated analytics or AI-driven tools"
+  ],
+  "stockout": [
+    "Occasionally (a few times per month)",
+    "Rarely (a few times per year)",
+    "Very frequently (weekly or more)",
+    "Never"
+  ],
+  "overstock": [
+    "Rarely (a few times per year)",
+    "Very frequently (weekly or more)",
+    "Occasionally (a few times per month)",
+    "Never"
+  ],
+  "fcastMethod": [
+    "Experience or gut-feeling based estimation",
+    "Statistical methods (e.g., moving averages, exponential smoothing)",
+    "Software-based forecasting tools (Excel, ERP modules)",
+    "Manual analysis of historical sales records",
+    "Machine learning or AI-based forecasting platforms"
+  ],
+  "leadTime": [
+    "4-7 days",
+    "8-14 days",
+    "More than 30 days",
+    "15-30 days",
+    "1-3 days"
+  ],
+  "safetyStock": [
+    "Yes - we maintain a formally calculated safety stock level",
+    "Yes - determined informally based on experience",
+    "No - safety stock is not maintained"
+  ],
+  "revLoss": [
+    "2%-5%",
+    "More than 10%",
+    "Less than 2%",
+    "6%-10%",
+    "Unable to estimate"
+  ]
+}

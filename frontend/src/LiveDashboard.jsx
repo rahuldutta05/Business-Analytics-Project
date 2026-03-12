@@ -28,6 +28,7 @@ const REFRESH_INTERVAL_MS = 30_000; // auto-refresh every 30 seconds
 // ─── COLUMN MAP: Google Form question → short key ──────────────────────────
 // These must match your actual form column headers exactly.
 const COL = {
+  // --- Original Question Mappings ---
   "Timestamp":                                                          "ts",
   "What type of business does your organization operate in?":           "bizType",
   "How long has your business been operating?":                         "yrs",
@@ -55,12 +56,70 @@ const COL = {
   "Seasonal and promotional demand fluctuations are difficult to predict accurately with our current methods.": "l4",
   "I believe predictive analytics can significantly improve the accuracy of inventory and demand decisions.": "l5",
   "My organization has sufficient data quality and availability to support the implementation of predictive analytics.": "l6",
+
+  // --- Preprocessed CSV Headers Support ---
+  "business_type":          "bizType",
+  "years_operating":        "yrs",
+  "role":                   "role",
+  "sku_size":               "sku",
+  "inv_mgmt":               "invMgmt",
+  "stockout_freq":          "stockout",
+  "overstock_freq":         "overstock",
+  "days_stock":             "daysStock",
+  "demand_factors":         "demandFactors",
+  "demand_predictability":  "predictability",
+  "peak_period":            "peakPeriods",
+  "forecast_method":        "fcastMethod",
+  "forecast_freq":          "fcastFreq",
+  "forecast_error":         "fcastError",
+  "lead_time":              "leadTime",
+  "supplier_reliability":   "supplierRel",
+  "safety_stock":           "safetyStock",
+  "hist_data":              "histData",
+  "data_update_freq":       "dataFreq",
+  "revenue_loss":           "revLoss",
+  "L1_inv_system":          "l1",
+  "L2_forecast_trust":      "l2",
+  "L3_supplier_delay":      "l3",
+  "L4_seasonal_difficulty": "l4",
+  "L5_analytics_belief":    "l5",
+  "L6_data_readiness":      "l6",
+  "timestamp":              "ts"
 };
 
 // ─── CSV PARSER ────────────────────────────────────────────────────────────
+
+// Split a multi-select string by commas, but IGNORE commas inside parentheses.
+// e.g. "Seasonal cycles (festive periods, summer, monsoon etc.), Price changes"
+// → ["Seasonal cycles (festive periods, summer, monsoon etc.)", "Price changes"]
+function splitMultiSelect(str) {
+  const parts = [];
+  let cur = "", depth = 0;
+  for (const ch of str) {
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (ch === "," && depth === 0) {
+      const trimmed = cur.trim();
+      if (trimmed) parts.push(trimmed);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  const trimmed = cur.trim();
+  if (trimmed) parts.push(trimmed);
+  return parts;
+}
+
 function parseCSV(text) {
-  const lines = text.trim().split("\n");
-  if (lines.length < 2) return [];
+  if (!text) return [];
+  // Remove BOM if present
+  const cleanText = text.replace(/^\uFEFF/, "");
+  const lines = cleanText.trim().split("\n");
+  if (lines.length < 2) {
+    console.error("CSV has fewer than 2 lines:", cleanText.slice(0, 100));
+    return [];
+  }
 
   // Robust line splitter that handles quoted commas
   const splitLine = (line) => {
@@ -77,40 +136,49 @@ function parseCSV(text) {
 
   const rawHeaders = splitLine(lines[0]);
 
-  // Build header → shortKey mapping with robust matching
+  // Build header → shortKey mapping.
+  // FIX: Use EXACT match for short preprocessed keys (length ≤ 30) to prevent
+  //      derived columns like "stockout_freq_num" from overwriting "stockout_freq".
+  //      Fuzzy matching is only allowed for long-form survey question keys (length > 30).
   const keyMap = {};
   const colKeys = Object.keys(COL);
   rawHeaders.forEach((h, i) => {
     const cleanHeader = h.toLowerCase().trim();
     const matchedKey = colKeys.find(k => {
       const cleanK = k.toLowerCase().trim();
-      // Precise or fuzzy match (first 80 chars)
-      return cleanHeader === cleanK || 
-             cleanHeader.includes(cleanK.slice(0, 80)) || 
-             cleanK.includes(cleanHeader.slice(0, 80));
+      // Always allow exact match
+      if (cleanHeader === cleanK) return true;
+      // Only fuzzy-match for long survey-question keys to avoid false positives
+      // on derived numeric columns (_num suffix, etc.)
+      if (cleanK.length > 30) {
+        return cleanHeader.includes(cleanK.slice(0, 60)) ||
+               cleanK.includes(cleanHeader.slice(0, 60));
+      }
+      return false;
     });
-    keyMap[i] = matchedKey ? COL[matchedKey] : h;
+    keyMap[i] = matchedKey ? COL[matchedKey] : null; // null = skip derived columns
   });
 
   return lines.slice(1).filter(l => l.trim()).map((line, ri) => {
     const fields = splitLine(line);
     const row = { id: ri + 1 };
     fields.forEach((v, i) => {
-      const key = keyMap[i] || `col_${i}`;
+      const key = keyMap[i];
+      if (!key) return; // skip unmapped / derived columns
       // Likert columns → integer
       if (["l1","l2","l3","l4","l5","l6"].includes(key)) {
         row[key] = parseInt(v, 10) || null;
       }
-      // Multi-select columns → array
+      // Multi-select columns → array (paren-aware split fixes "Seasonal cycles (festive, ...)")
       else if (key === "demandFactors" || key === "peakPeriods") {
-        row[key] = v.split(",").map(x => x.trim()).filter(Boolean);
+        row[key] = splitMultiSelect(v).filter(Boolean);
       }
       else {
-        row[key] = v.replace(/^"|"$/g, "").trim();
+        row[key] = String(v).replace(/^"|"$/g, "").trim();
       }
     });
     return row;
-  }).filter(r => r.bizType); // skip empty rows
+  }).filter(r => r.bizType || r.role || r.id);
 }
 
 // ─── AGGREGATION HELPERS ───────────────────────────────────────────────────
@@ -489,12 +557,28 @@ export default function Dashboard() {
   },[data]);
   const fcastMethods = useMemo(()=>[...new Set(data.map(r=>r.fcastMethod))].filter(Boolean),[data]);
 
-  const bubbleData = useMemo(()=>{
-    const ltN={"1–3 days":2,"4–7 days":5,"8-14 days":11,"8–14 days":11,"15-30 days":22,"15–30 days":22,"More than 30 days":35};
-    const rlN={"Less than 2%":1,"2%-5%":3.5,"6%-10%":8,"More than 10%":12};
-    const skN={"Fewer than 50 SKUs":50,"50–200 SKUs":150,"200–500 SKUs":350,"More than 500 SKUs":600};
-    return data.map(r=>({lt:ltN[r.leadTime]||5,rl:rlN[r.revLoss]||5,sku:skN[r.sku]||100}));
-  },[data]);
+  const bubbleData = useMemo(() => {
+    const findMap = (val, mapping) => {
+      if (!val) return null;
+      const v = String(val).toLowerCase().replace(/[–—]/g, "-");
+      // Sort keys by length descending to avoid shadowing (e.g. "2%" matching "less than 2%")
+      const entries = Object.entries(mapping).sort((a,b) => b[0].length - a[0].length);
+      for (const [k, score] of entries) {
+        if (v.includes(k.toLowerCase())) return score;
+      }
+      return null;
+    };
+
+    const ltM = { "1-3": 2, "4-7": 5, "8-14": 11, "15-30": 22, "more than 30": 35 };
+    const rlM = { "less than 2": 1, "2%-5%": 3.5, "6%-10%": 8, "more than 10": 12 };
+    const skM = { "fewer than 50": 50, "50-200": 150, "200-500": 350, "more than 500": 600 };
+
+    return data.map(r => ({
+      lt: findMap(r.leadTime, ltM) || 5,
+      rl: findMap(r.revLoss, rlM) || 5,
+      sku: findMap(r.sku, skM) || 100
+    }));
+  }, [data]);
 
   const timelineData = useMemo(()=>data.map((r,i)=>({
     ts: r.ts ? r.ts.split(" ")[1]||r.ts : `R${i+1}`, n:i+1
@@ -637,8 +721,8 @@ export default function Dashboard() {
               <KPICard label="Responses"       value={N}               unit="total"    icon="👥" color={P.blue}   sub="Live count" theme={theme}/>
               <KPICard label="Analytics Belief" value={avg(data,"l5")} unit="/ 5"      icon="🤖" color={P.purple} sub="Avg Q24" theme={theme}/>
               <KPICard label="Data Readiness"  value={avg(data,"l6")}  unit="/ 5"      icon="🗃️" color={P.teal}   sub="Avg Q25" theme={theme}/>
-              <KPICard label="With Safety Stock" value={data.filter(r=>r.safetyStock && r.safetyStock.toLowerCase().includes("yes")).length} unit={`/ ${N}`} icon="🛡️" color={P.orange} sub="Formal or informal" theme={theme}/>
-              <KPICard label="Revenue at Risk" value={data.filter(r=>r.revLoss && (r.revLoss.includes("6%") || r.revLoss.includes("10%"))).length} unit={`/ ${N}`} icon="💸" color={P.red} sub="Losing 6%+ p.a." theme={theme}/>
+              <KPICard label="With Safety Stock" value={data.filter(r=>r.safetyStock && r.safetyStock.startsWith("Yes")).length} unit={`/ ${N}`} icon="🛡️" color={P.orange} sub="Formal or informal" theme={theme}/>
+              <KPICard label="Revenue at Risk" value={data.filter(r=>r.revLoss==="6%-10%" || r.revLoss==="More than 10%").length} unit={`/ ${N}`} icon="💸" color={P.red} sub="Losing 6%+ p.a." theme={theme}/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>
               <ChartCard title="Business Type" height={200} theme={theme}>
@@ -708,10 +792,10 @@ export default function Dashboard() {
                          boxShadow: theme.dark ? "none" : "0 2px 12px rgba(0,0,0,0.06)", border:`1px solid ${theme.border}`}}>
               <p style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:theme.muted, marginBottom:14}}>Key Findings</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                <Insight color={P.red}    text={`${data.filter(r=>r.stockout && r.stockout.includes("Very frequently")).length} of ${N} organizations experience stockouts very frequently.`} theme={theme}/>
+                <Insight color={P.red}    text={`${data.filter(r=>r.stockout==="Very frequently (weekly or more)").length} of ${N} organizations experience stockouts very frequently.`} theme={theme}/>
                 <Insight color={P.blue}   text={`Trust in forecasting (avg ${avg(data,"l2")}/5) is the lowest-rated perception — confirming demand for better tools.`} theme={theme}/>
                 <Insight color={P.teal}   text={`Analytics belief (avg ${avg(data,"l5")}/5) is the highest-rated item — respondents are ready to adopt predictive tools.`} theme={theme}/>
-                <Insight color={P.orange} text={`${data.filter(r=>r.revLoss && (r.revLoss.includes("6%-10%") || r.revLoss.includes("More than 10%"))).length} of ${N} firms lose 6%+ annual revenue to inventory inefficiencies.`} theme={theme}/>
+                <Insight color={P.orange} text={`${data.filter(r=>r.revLoss==="6%-10%" || r.revLoss==="More than 10%").length} of ${N} firms lose 6%+ annual revenue to inventory inefficiencies.`} theme={theme}/>
               </div>
             </div>
           </div>
@@ -751,12 +835,27 @@ export default function Dashboard() {
             <ChartCard title="Inv System vs Stockout Frequency" height={230} wide theme={theme}>
               <ResponsiveContainer width="100%" height="100%">
                 {(() => {
-                  const systems=["Manual tracking (spreadsheets or paper records)", "Dedicated inventory management software", "Enterprise Resource Planning (ERP) system", "Automated analytics / AI tools"];
-                  const sfreqs=["Never", "Rarely (a few times per year)", "Occasionally (a few times per month)", "Very frequently (weekly or more)"];
-                  const d=systems.map(s=>({
-                    name: s.split(" (")[0], 
-                    full: s,
-                    ...Object.fromEntries(sfreqs.map(f=>[f,data.filter(r=>r.invMgmt===s&&r.stockout===f).length]))
+                  // Use exact values from the CSV to avoid false-zero matches
+                  const systems = [
+                    "Manual tracking (spreadsheets or paper records)",
+                    "Dedicated inventory management software",
+                    "Enterprise Resource Planning (ERP) system",
+                    "Automated analytics or AI-driven tools"
+                  ];
+                  const sfreqs = [
+                    "Never",
+                    "Rarely (a few times per year)",
+                    "Occasionally (a few times per month)",
+                    "Very frequently (weekly or more)"
+                  ];
+                  // Short display labels (strip the parenthetical clarification)
+                  const sysLabel = s => s.split(" (")[0].replace("Enterprise Resource Planning", "ERP");
+                  const d = systems.map(s => ({
+                    name: sysLabel(s),
+                    ...Object.fromEntries(sfreqs.map(f => [
+                      f,
+                      data.filter(r => r.invMgmt === s && r.stockout === f).length
+                    ]))
                   }));
                   return (<BarChart data={d} margin={{top:4,right:8,left:10,bottom:8}}>
                     <CartesianGrid strokeDasharray="3 3" stroke={theme.border} vertical={false}/>
@@ -784,11 +883,12 @@ export default function Dashboard() {
               <ChartCard title="Safety Stock Practices" height={210} theme={theme}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={(() => {
-                      const opts = ["Yes — we maintain a formally calculated safety stock level", "Yes — determined informally based on experience", "No — we do not maintain a safety stock", "No — but we are planning to implement safety stock in the future"];
-                      return opts.map(o => ({ name: o.split(" — ")[1] || o, value: data.filter(r => r.safetyStock === o).length }));
-                    })()} cx="50%" cy="40%" innerRadius={45} outerRadius={65} dataKey="value" paddingAngle={2} stroke="none" isAnimationActive={false}>
-                      {[P.blue, P.teal, P.red, P.orange].map((c,i)=><Cell key={i} fill={c}/>)}
+                    <Pie data={safetyData.map(d => ({
+                      // Strip "Yes - " / "No - " prefix for a clean legend label
+                      name: d.name.includes(" - ") ? d.name.split(" - ").slice(1).join(" - ") : d.name,
+                      value: d.value
+                    }))} cx="50%" cy="40%" innerRadius={45} outerRadius={65} dataKey="value" paddingAngle={2} stroke="none" isAnimationActive={false}>
+                      {safetyData.map((_,i)=><Cell key={i} fill={[P.blue, P.teal, P.red, P.orange][i%4]}/>)}
                     </Pie>
                     <Tooltip contentStyle={ttStyle}/>
                     <Legend iconType="circle" iconSize={8} verticalAlign="bottom" align="center" formatter={v=><span style={{color:theme.muted,fontSize:9}}>{v}</span>}/>
@@ -823,12 +923,23 @@ export default function Dashboard() {
               <ChartCard title="Forecasting Methods" height={220} theme={theme}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={(() => {
-                    const opts = ["Experience or gut-feeling based estimation", "Manual analysis of historical sales records", "Statistical methods (e.g., moving averages, exponential smoothing)", "Software-based forecasting tools (Excel, ERP modules)", "AI or Machine Learning predictive models", "No systematic forecasting process"];
-                    return opts.map(o => ({ name: o.split(" (")[0].split(" or ")[0], value: data.filter(r => r.fcastMethod === o).length }));
-                  })()} layout="vertical" margin={{top:4,right:40,left:10,bottom:4}}>
+                    // Use explicit label + unique-enough match string to avoid false positives
+                    const METHODS = [
+                      { label:"Experience",                    match:"Experience or gut-feeling" },
+                      { label:"Manual analysis\nof historical\nsales records", match:"Manual analysis of historical" },
+                      { label:"Statistical\nmethods",          match:"Statistical methods" },
+                      { label:"Software-based\nforecasting\ntools", match:"Software-based forecasting" },
+                      { label:"AI / ML\nForecasting",          match:"Machine learning" },
+                      { label:"No systematic\nforecasting\nprocess", match:"No systematic forecasting" },
+                    ];
+                    return METHODS.map(m => ({
+                      name: m.label,
+                      value: data.filter(r => String(r.fcastMethod).toLowerCase().includes(m.match.toLowerCase())).length
+                    }));
+                  })()} layout="vertical" margin={{top:4,right:50,left:10,bottom:4}}>
                     <CartesianGrid strokeDasharray="3 3" stroke={theme.border} horizontal={false}/>
                     <XAxis type="number" allowDecimals={false} tick={{fontSize:10,fill:theme.muted}} tickLine={false} axisLine={false}/>
-                    <YAxis type="category" dataKey="name" width={100} tick={{fontSize:9,fill:theme.text}} tickLine={false} axisLine={false}/>
+                    <YAxis type="category" dataKey="name" width={110} tick={{fontSize:9,fill:theme.text,whiteSpace:"pre"}} tickLine={false} axisLine={false}/>
                     <Tooltip contentStyle={ttStyle} cursor={{fill:theme.dark?"#ffffff10":"#00000005"}}/>
                     <Bar dataKey="value" radius={[0,6,6,0]} maxBarSize={22} isAnimationActive={false} label={{position:"right",fontSize:10,fontWeight:700,fill:theme.text}}>
                       {PIE_COLORS.map((c,i)=><Cell key={i} fill={c}/>)}
@@ -1019,10 +1130,16 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((r,ri)=>{
+                  {data.slice().sort((a,b) => {
+                    const dateA = new Date(a.ts);
+                    const dateB = new Date(b.ts);
+                    // Fallback to ID if timestamps are same or invalid
+                    if (isNaN(dateA) || isNaN(dateB)) return b.id - a.id;
+                    return dateB - dateA;
+                  }).map((r,ri)=>{
                     const scores=LCOLS.map(c=>r[c]);
                     const ra=(scores.reduce((a,b)=>a+(+b||0),0)/6).toFixed(1);
-                    const cells=[ri+1,r.ts,r.bizType,r.role,r.sku,r.invMgmt,
+                    const cells=[r.id,r.ts,r.bizType,r.role,r.sku,r.invMgmt,
                       r.stockout,r.overstock,r.leadTime,r.safetyStock,r.revLoss,
                       ...scores,ra];
                     return (
