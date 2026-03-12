@@ -67,15 +67,23 @@ def load_data(filepath=None):
     return df
 
 # -- HELPER ------------------------------------------------------------------
-def wrap_labels(ax, width=15):
+def wrap_labels(ax, width=15, is_x=True):
     labels = []
-    for label in ax.get_xticklabels():
-        text = label.get_text()
-        labels.append(textwrap.fill(text, width=width))
-    ax.set_xticklabels(labels, rotation=0)
+    if is_x:
+        for label in ax.get_xticklabels():
+            text = label.get_text()
+            labels.append(textwrap.fill(text, width=width))
+        ax.set_xticklabels(labels, rotation=0)
+    else:
+        for label in ax.get_yticklabels():
+            text = label.get_text()
+            labels.append(textwrap.fill(text, width=width))
+        ax.set_yticklabels(labels)
 
 def save(name):
     path = os.path.join(CHARTS_DIR, f"{name}.png")
+    print(f"Opening window for: {name} (Please resize it if needed and close to continue)")
+    plt.show() # Opens interactive window (Option 2)
     plt.savefig(path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"  [OK] {path}")
@@ -88,7 +96,7 @@ def save(name):
 def plot_business_type_bar(df):
     """Bar chart - Business type distribution."""
     vc = df["business_type"].value_counts()
-    fig, ax = plt.subplots(figsize=(7, 4))
+    fig, ax = plt.subplots(figsize=(8, 5))
     bars = ax.bar(vc.index, vc.values, color=COLORS[:len(vc)], width=0.5, edgecolor="white")
     ax.bar_label(bars, fmt="%d", padding=4, fontsize=10, fontweight="bold")
     ax.set_title("Business Type Distribution", fontsize=12, fontweight="bold", pad=16)
@@ -100,7 +108,7 @@ def plot_business_type_bar(df):
 
 def plot_likert_histograms(df):
     """Histogram grid – distribution of all 6 Likert responses."""
-    fig, axes = plt.subplots(2, 3, figsize=(12, 6), sharey=True)
+    fig, axes = plt.subplots(2, 3, figsize=(14, 8))
     axes = axes.flatten()
     for i, col in enumerate(LIKERT_COLS):
         ax = axes[i]
@@ -122,7 +130,7 @@ def plot_likert_histograms(df):
 
 def plot_likert_density(df):
     """KDE density plot – smooth distributions of Likert responses."""
-    fig, ax = plt.subplots(figsize=(9, 5))
+    fig, ax = plt.subplots(figsize=(10, 6))
     for i, col in enumerate(LIKERT_COLS):
         jitter = df[col] + np.random.normal(0, 0.08, len(df))
         sns.kdeplot(jitter, ax=ax, label=LIKERT_LABELS[col].replace("\n"," "),
@@ -139,7 +147,7 @@ def plot_likert_density(df):
 
 def plot_box_plots(df):
     """Box plots – Likert spread and outliers by category."""
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(12, 6))
     data_list = [df[c].dropna().values for c in LIKERT_COLS]
     labels = [LIKERT_LABELS[c].replace("\n"," ") for c in LIKERT_COLS]
     bp = ax.boxplot(data_list, patch_artist=True, notch=False,
@@ -147,7 +155,7 @@ def plot_box_plots(df):
     for patch, color in zip(bp["boxes"], COLORS):
         patch.set_facecolor(color)
         patch.set_alpha(0.75)
-    ax.set_xticklabels(labels, rotation=20, ha="right", fontsize=9)
+    ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=9)
     ax.set_yticks([1,2,3,4,5])
     ax.set_yticklabels(["SD","D","N","A","SA"])
     ax.set_title("Box Plots – Likert Score Distribution per Statement",
@@ -162,7 +170,7 @@ def plot_violin(df):
     df_v = df[["business_type","L5_analytics_belief"]].dropna()
     if df_v["business_type"].nunique() < 2:
         return
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(10, 6))
     parts = ax.violinplot(
         [df_v[df_v["business_type"]==bt]["L5_analytics_belief"].values
          for bt in df_v["business_type"].unique()],
@@ -187,7 +195,7 @@ def plot_violin(df):
 def plot_grouped_bar_stockout_vs_system(df):
     """Grouped bar - Inventory management system vs stockout frequency."""
     tbl = pd.crosstab(df["inv_mgmt"], df["stockout_freq"])
-    ax = tbl.plot(kind="bar", figsize=(10, 5), color=COLORS[:len(tbl.columns)],
+    ax = tbl.plot(kind="bar", figsize=(12, 6), color=COLORS[:len(tbl.columns)],
                   edgecolor="white", width=0.7)
     plt.title("Inventory System vs Stockout Frequency", fontsize=12, fontweight="bold")
     plt.xlabel("Inventory Management System")
@@ -202,7 +210,7 @@ def plot_stacked_forecast_by_biz(df):
     """100% Stacked bar - Forecasting methods by business type."""
     tbl = pd.crosstab(df["business_type"], df["forecast_method"])
     tbl_pct = tbl.div(tbl.sum(axis=1), axis=0) * 100
-    ax = tbl_pct.plot(kind="bar", stacked=True, figsize=(9, 5),
+    ax = tbl_pct.plot(kind="bar", stacked=True, figsize=(11, 6),
                       color=COLORS[:len(tbl_pct.columns)], edgecolor="white", width=0.55)
     plt.title("Forecast Methods by Business Type (100% Stacked)", fontsize=12, fontweight="bold")
     plt.xlabel("Business Type")
@@ -216,7 +224,7 @@ def plot_stacked_forecast_by_biz(df):
 def plot_stacked_demand_pred_by_biz(df):
     """Stacked bar - Demand predictability by business type."""
     tbl = pd.crosstab(df["business_type"], df["demand_predictability"])
-    ax = tbl.plot(kind="bar", stacked=True, figsize=(9, 5),
+    ax = tbl.plot(kind="bar", stacked=True, figsize=(11, 6),
                   color=COLORS[:len(tbl.columns)], edgecolor="white", width=0.55)
     plt.title("Demand Predictability by Business Type", fontsize=12, fontweight="bold")
     plt.xlabel("Business Type")
@@ -238,7 +246,7 @@ def plot_heatmap_correlation(df):
         print("  [!] Too few rows for correlation - skipping")
         return
     corr = likert_df.corr(method="pearson")
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(10, 8))
     mask = np.triu(np.ones_like(corr, dtype=bool), k=1)
     sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", center=0,
                 linewidths=0.5, ax=ax,
@@ -258,7 +266,7 @@ def plot_bubble_chart(df):
     if len(plot_df) == 0:
         return
 
-    fig, ax = plt.subplots(figsize=(9, 5))
+    fig, ax = plt.subplots(figsize=(11, 6))
     biz_types = plot_df["business_type"].unique()
     for i, bt in enumerate(biz_types):
         sub = plot_df[plot_df["business_type"] == bt]
@@ -311,6 +319,7 @@ def plot_diverging_likert(df):
 
     ax.set_yticks(range(len(labels)))
     ax.set_yticklabels(labels, fontsize=9)
+    wrap_labels(ax, width=25, is_x=False)
     ax.axvline(0, color="black", linewidth=1.2)
     ax.set_xlabel("← Disagree  |  Percentage of Respondents (%)  |  Agree →")
     ax.set_title("Diverging Likert Chart – Survey Perception Statements",
@@ -335,10 +344,11 @@ def plot_radar_likert(df):
     angles+= angles[:1]
     labels = [LIKERT_LABELS[c].replace("\n"," ") for c in LIKERT_COLS]
 
-    fig, ax = plt.subplots(figsize=(7, 7), subplot_kw=dict(polar=True))
+    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
     ax.plot(angles, avgs, color=COLORS[0], linewidth=2.5, zorder=3)
     ax.fill(angles, avgs, color=COLORS[0], alpha=0.2)
     ax.set_thetagrids(np.degrees(angles[:-1]), labels, fontsize=8)
+    ax.tick_params(axis='x', pad=15)
     ax.set_ylim(0, 5)
     ax.set_yticks([1,2,3,4,5])
     ax.set_yticklabels(["1","2","3","4","5"], fontsize=7, color="gray")
@@ -365,7 +375,7 @@ def plot_demand_factors_pareto(df):
     
     s_pct = s.cumsum() / s.sum() * 100
 
-    fig, ax1 = plt.subplots(figsize=(10, 5))
+    fig, ax1 = plt.subplots(figsize=(12, 6))
     bars = ax1.bar(range(len(s)), s.values, color=COLORS[0], alpha=0.8, edgecolor="white")
     ax1.bar_label(bars, fmt="%d", padding=3, fontweight="bold")
     ax1.set_xticks(range(len(s)))
@@ -384,7 +394,7 @@ def plot_demand_factors_pareto(df):
 def plot_horizontal_stockout(df):
     """Ordered horizontal bar chart - Stockout frequency."""
     vc = df["stockout_freq"].value_counts()
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig, ax = plt.subplots(figsize=(10, 5))
     bars = ax.barh(vc.index, vc.values, color=COLORS[1], height=0.6)
     ax.bar_label(bars, fmt="%d", padding=4, fontweight="bold")
     ax.set_title("Stockout Frequency Distribution", fontsize=12, fontweight="bold")
@@ -404,7 +414,7 @@ def plot_response_timeline(df):
         return
     df_t = df.sort_values("timestamp")
     df_t["cumulative"] = range(1, len(df_t)+1)
-    fig, ax = plt.subplots(figsize=(9, 4))
+    fig, ax = plt.subplots(figsize=(11, 5))
     ax.plot(df_t["timestamp"], df_t["cumulative"],
             marker="o", color=COLORS[0], linewidth=2.5, markersize=8)
     ax.fill_between(df_t["timestamp"], df_t["cumulative"], alpha=0.15, color=COLORS[0])
@@ -470,7 +480,7 @@ def plot_supplier_lead_time_histogram(df):
     """Histogram-style bar – Lead time distribution."""
     order = ["1–3 days","4–7 days","8–14 days","15–30 days","More than 30 days"]
     vc    = df["lead_time"].value_counts().reindex(order).fillna(0)
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig, ax = plt.subplots(figsize=(10, 5))
     bars = ax.bar(vc.index, vc.values, color=COLORS[1], width=0.6, edgecolor="white")
     ax.bar_label(bars, fmt="%d", padding=4, fontweight="bold")
     ax.set_title("Supplier Lead Time Distribution", fontsize=13, fontweight="bold")
@@ -500,7 +510,7 @@ def plot_likert_means_bar(df):
     """Horizontal bar - Average Likert score per statement."""
     avgs = [df[c].mean() for c in LIKERT_COLS]
     labels = [LIKERT_LABELS[c] for c in LIKERT_COLS]
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(12, 6))
     bars = ax.barh(labels, avgs, color=COLORS, height=0.6, edgecolor="white")
     ax.bar_label(bars, fmt="%.2f", padding=4, fontweight="bold")
     ax.set_xlim(0, 5.5)
