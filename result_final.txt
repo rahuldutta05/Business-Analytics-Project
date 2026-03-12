@@ -1,0 +1,8 @@
+Column 0: "Timestamp" -> mapped to "ts"
+Column 1: "What type of business does your organization operate in?" -> mapped to "bizType"
+Column 2: "How long has your business been operating?" -> mapped to "yrs"
+Column 3: "What is your role in the organization?  " -> mapped to "role"
+Column 4: "What is the approximate size of your inventory (number of distinct products / SKUs managed)?  " -> mapped to "sku"
+Column 5: "How does your organization currently manage inventory levels?  " -> mapped to "invMgmt"
+Column 6: "How often does your organization experience stockouts (inability to fulfill orders due to insufficient stock)?  " -> mapped to "stockout"
+Column 7: "How often does your organization experience excess inventory or overstocking?" -> mapped to "overstock"
